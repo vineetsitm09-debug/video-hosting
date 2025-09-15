@@ -54,7 +54,7 @@ const [autoplayNext] = useState(true);
       formData.append("title", file.name);
 
      // const response = await fetch(`${API_URL}/videos`, {
-		 const response = await fetch("http://localhost:4000/upload", {
+	const response = await fetch("https://streamlite-backend-1.onrender.com/upload", {
        method: "POST",
         body: formData,
       });
