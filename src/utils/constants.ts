@@ -1,4 +1,6 @@
-export const API_URL = "http://127.0.0.1:8000";
+//export const API_URL = "http://127.0.0.1:8000";
+export const API_URL = "https://streamlite-backend.onrender.com";
+
 
 export const LS = {
   LIKES: "vh_likes_v1",
