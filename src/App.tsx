@@ -133,7 +133,7 @@ const [autoplayNext] = useState(true);
     return {
       id: current.id,
       title: current.title || current.filename,
-      url: current.url,
+      url: current.url || current.s3_key_hls || "", // ✅ safe fallback
       thumbnail: current.thumbnail,
       thumbnails_base: current.thumbnails_base,
       chapters: current.chapters || [],
