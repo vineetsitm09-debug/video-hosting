@@ -53,8 +53,9 @@ const [autoplayNext] = useState(true);
       formData.append("file", file);
       formData.append("title", file.name);
 
-      const response = await fetch(`${API_URL}/videos`, {
-        method: "POST",
+     // const response = await fetch(`${API_URL}/videos`, {
+		 const response = await fetch("http://localhost:4000/upload", {
+       method: "POST",
         body: formData,
       });
       if (!response.ok) throw new Error("Upload failed");
