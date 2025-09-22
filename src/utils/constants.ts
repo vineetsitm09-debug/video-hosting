@@ -1,7 +1,6 @@
-//export const API_URL = "http://127.0.0.1:8000";
-export const API_URL = "http://localhost:5000"; 
-export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
+export const API_URL = "http://18.218.164.106:5000"; // backend ka EC2 IP + port
 export const UPLOAD_ENDPOINT = `${API_URL}/upload`;
+export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
 
 export const LS = {
   LIKES: "vh_likes_v1",
