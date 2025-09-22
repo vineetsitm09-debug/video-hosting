@@ -74,24 +74,23 @@ const [autoplayNext] = useState(true);
   };
 
   // ---------------- Fetch videos + restore last ----------------
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API_URL}/videos`);
-        const data: VideoItem[] = await r.json();
+ useEffect(() => {
+  fetch(VIDEOS_ENDPOINT)
+    .then((res) => res.json())
+    .then((data) => {
+      if (Array.isArray(data)) {
         setVideos(data);
-
-        const savedId = localStorage.getItem("lastVideoId");
-        if (savedId && data.some((v) => v.id === savedId)) {
-          setCurrentId(savedId);
-        } else if (data.length > 0) {
-          setCurrentId(data[0].id);
-        }
-      } catch (e) {
-        console.error("Error fetching videos:", e);
+      } else {
+        console.error("API did not return array:", data);
+        setVideos([]); // ✅ safe fallback
       }
-    })();
-  }, []);
+    })
+    .catch((err) => {
+      console.error("Error fetching videos:", err);
+      setVideos([]); // ✅ safe fallback
+    });
+}, []);
+
 
   // ---------------- Persist state ----------------
   useEffect(() => {
