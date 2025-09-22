@@ -1,7 +1,7 @@
 // src/utils/constants.ts
 
 //export const API_URL = "http://127.0.0.1:8000";
-export const API_URL = "http://18.218.164.106:9001";
+export const API_URL = "http://18.218.164.106:5000"; 
 export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
 export const UPLOAD_ENDPOINT = `${API_URL}/upload`;
 
