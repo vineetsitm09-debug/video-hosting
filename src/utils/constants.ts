@@ -1,11 +1,11 @@
 // src/utils/constants.ts
 
-//export const API_URL = "http://127.0.0.1:8000";
-// Use your EC2 server, NOT localhost
-export const API_URL = import.meta.env.VITE_API_URL;  // or 4000 if you switched
+// Use environment variable in production, fallback to localhost for local dev
+export const API_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
 export const UPLOAD_ENDPOINT = `${API_URL}/upload`;
-
 
 export const LS = {
   LIKES: "vh_likes_v1",
