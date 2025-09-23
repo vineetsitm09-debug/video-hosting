@@ -6,7 +6,7 @@ import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import Toast from "./components/Toast";
 import { fmtBytes, fmtDuration, clamp } from "./utils/format";
-import { API_URL, LS } from "./utils/constants";
+import { VIDEOS_ENDPOINT, UPLOAD_ENDPOINT, LS } from "./utils/constants";
 import { AuthProvider } from "./context/AuthContext";
 import type { VideoItem } from "./types";
 
@@ -17,7 +17,7 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "neon">(
     () => (localStorage.getItem(LS.THEME) as "dark" | "neon") || "dark"
   );
-const [autoplayNext] = useState(true);
+  const [autoplayNext] = useState(true);
 
   const [watchPos, setWatchPos] = useState<
     Record<string, { t: number; d: number }>
@@ -53,9 +53,9 @@ const [autoplayNext] = useState(true);
       formData.append("file", file);
       formData.append("title", file.name);
 
-     // const response = await fetch(`${API_URL}/videos`, {
-	const response = await fetch("https://streamlite-backend-1.onrender.com/upload", {
-       method: "POST",
+      // ✅ Use UPLOAD_ENDPOINT instead of hardcoding
+      const response = await fetch(UPLOAD_ENDPOINT, {
+        method: "POST",
         body: formData,
       });
       if (!response.ok) throw new Error("Upload failed");
@@ -73,24 +73,23 @@ const [autoplayNext] = useState(true);
     }
   };
 
-  // ---------------- Fetch videos + restore last ----------------
- useEffect(() => {
-  fetch(VIDEOS_ENDPOINT)
-    .then((res) => res.json())
-    .then((data) => {
-      if (Array.isArray(data)) {
-        setVideos(data);
-      } else {
-        console.error("API did not return array:", data);
+  // ---------------- Fetch videos ----------------
+  useEffect(() => {
+    fetch(VIDEOS_ENDPOINT)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setVideos(data);
+        } else {
+          console.error("API did not return array:", data);
+          setVideos([]); // ✅ safe fallback
+        }
+      })
+      .catch((err) => {
+        console.error("Error fetching videos:", err);
         setVideos([]); // ✅ safe fallback
-      }
-    })
-    .catch((err) => {
-      console.error("Error fetching videos:", err);
-      setVideos([]); // ✅ safe fallback
-    });
-}, []);
-
+      });
+  }, []);
 
   // ---------------- Persist state ----------------
   useEffect(() => {
