@@ -2,7 +2,7 @@
 
 //export const API_URL = "http://127.0.0.1:8000";
 // Use your EC2 server, NOT localhost
-export const API_URL = "http://18.218.164.106:5000";  // or 4000 if you switched
+export const API_URL = import.meta.env.VITE_API_URL;  // or 4000 if you switched
 export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
 export const UPLOAD_ENDPOINT = `${API_URL}/upload`;
 
