@@ -1,8 +1,7 @@
 // src/utils/constants.ts
 
 // Use environment variable in production, fallback to localhost for local dev
-export const API_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
+export const API_URL = "http://18.218.164.106:5000";
 
 export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
 export const UPLOAD_ENDPOINT = `${API_URL}/upload`;
