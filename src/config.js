@@ -1,2 +1,2 @@
 // Backend API endpoint
-export const API_URL = "http://localhost:8000";
+export const API_URL = "http://18.218.164.106:5000";
