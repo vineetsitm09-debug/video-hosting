@@ -54,10 +54,11 @@ export default function App() {
       formData.append("title", file.name);
 
       // ✅ Use UPLOAD_ENDPOINT instead of hardcoding
-      const response = await fetch(UPLOAD_ENDPOINT, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(`${UPLOAD_ENDPOINT}/video`, {
+		method: "POST",
+		body: formData,
+		});
+
       if (!response.ok) throw new Error("Upload failed");
 
       const video: VideoItem = await response.json();
