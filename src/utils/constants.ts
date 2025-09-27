@@ -1,4 +1,4 @@
-export const API_URL = "http://18.218.164.106:4000";
+export const API_URL = "http://18.218.164.106:5000";
 
 export const VIDEOS_ENDPOINT = `${API_URL}/videos`;
 export const UPLOAD_ENDPOINT = `${API_URL}/upload`; // base
