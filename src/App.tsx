@@ -50,7 +50,7 @@ export default function App() {
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
+	formData.append("video", file); // ✅ must match backend
       formData.append("title", file.name);
 
       // ✅ Use UPLOAD_ENDPOINT instead of hardcoding
