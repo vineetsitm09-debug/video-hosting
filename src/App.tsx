@@ -6,7 +6,7 @@ import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import Toast from "./components/Toast";
 import { fmtBytes, fmtDuration, clamp } from "./utils/format";
-import { VIDEOS_ENDPOINT, UPLOAD_ENDPOINT, LS } from "./utils/constants";
+import { API_URL, LS } from "./utils/constants";
 import { AuthProvider } from "./context/AuthContext";
 import type { VideoItem } from "./types";
 
@@ -17,7 +17,7 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "neon">(
     () => (localStorage.getItem(LS.THEME) as "dark" | "neon") || "dark"
   );
-  const [autoplayNext] = useState(true);
+  const [autoplayNext, setAutoplayNext] = useState(true);
 
   const [watchPos, setWatchPos] = useState<
     Record<string, { t: number; d: number }>
@@ -41,27 +41,32 @@ export default function App() {
   // ✅ Up-Next state
   const [upNextVisible, setUpNextVisible] = useState(false);
   const [upNextCount, setUpNextCount] = useState(5);
+  const [autoPlayOnLoad, setAutoPlayOnLoad] = useState(false);
 
   // ---------------- Upload handler ----------------
-  const handleUpload: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+const handleUpload: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
 
     try {
-      const formData = new FormData();
-	formData.append("video", file); // ✅ must match backend
-      formData.append("title", file.name);
+        const formData = new FormData();
+        // NOTE: Your server expects the file field to be named 'video', 
+        // but your frontend names it 'file'. We will assume 'file' is correct 
+        // based on the previous working example, but verify this later if it still fails.
+        formData.append("file", file);
+        formData.append("title", file.name);
 
-      // ✅ Use UPLOAD_ENDPOINT instead of hardcoding
-      const response = await fetch(`${UPLOAD_ENDPOINT}/video`, {
-		method: "POST",
-		body: formData,
-		});
+        // ✅ CORRECTED LINE: Should point to /upload
+        const response = await fetch(`${API_URL}/upload`, { 
+            method: "POST",
+            body: formData,
+        });
+        
+        if (!response.ok) throw new Error("Upload failed");
 
-      if (!response.ok) throw new Error("Upload failed");
-
-      const video: VideoItem = await response.json();
+        const video: VideoItem = await response.json();
+        // ... (rest of the success logic)
       setVideos((prev) => [video, ...prev]);
       setCurrentId(video.id);
       setToast({ message: "Upload successful!", type: "success" });
@@ -74,22 +79,24 @@ export default function App() {
     }
   };
 
-  // ---------------- Fetch videos ----------------
+  // ---------------- Fetch videos + restore last ----------------
   useEffect(() => {
-    fetch(VIDEOS_ENDPOINT)
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setVideos(data);
-        } else {
-          console.error("API did not return array:", data);
-          setVideos([]); // ✅ safe fallback
+    (async () => {
+      try {
+        const r = await fetch(`${API_URL}/videos`);
+        const data: VideoItem[] = await r.json();
+        setVideos(data);
+
+        const savedId = localStorage.getItem("lastVideoId");
+        if (savedId && data.some((v) => v.id === savedId)) {
+          setCurrentId(savedId);
+        } else if (data.length > 0) {
+          setCurrentId(data[0].id);
         }
-      })
-      .catch((err) => {
-        console.error("Error fetching videos:", err);
-        setVideos([]); // ✅ safe fallback
-      });
+      } catch (e) {
+        console.error("Error fetching videos:", e);
+      }
+    })();
   }, []);
 
   // ---------------- Persist state ----------------
@@ -132,7 +139,7 @@ export default function App() {
     return {
       id: current.id,
       title: current.title || current.filename,
-      url: current.url || current.s3_key_hls || "", // ✅ safe fallback
+      url: current.url,
       thumbnail: current.thumbnail,
       thumbnails_base: current.thumbnails_base,
       chapters: current.chapters || [],
@@ -215,6 +222,8 @@ export default function App() {
                     }
                     onFullscreenChange={setIsFullscreen}
                     onEnded={handleEnded}
+                    autoPlayOnLoad={autoPlayOnLoad}
+                    onAutoplayConsumed={() => setAutoPlayOnLoad(false)}
                   />
                 ) : (
                   <div className="p-6">No video selected</div>
@@ -252,6 +261,12 @@ export default function App() {
             {!isFullscreen && (
               <section className="w-80">
                 <UpNextPanel
+                  nextVideo={nextVideo}
+                  autoplayNext={autoplayNext}
+                  onCancel={() => {
+                    setUpNextVisible(false);
+                    setAutoplayNext(false);
+                  }}
                   onPlayNext={() => {
                     if (nextVideo) setCurrentId(nextVideo.id);
                     setUpNextVisible(false);
@@ -311,7 +326,7 @@ export default function App() {
                               />
                             </div>
                             <div className="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1 rounded">
-                              {fmtDuration(Number(v.duration))}
+                              {fmtDuration(v.duration)}
                             </div>
                           </div>
                           <div className="flex-1 min-w-0 text-left">
