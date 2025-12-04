@@ -1,455 +1,413 @@
-// src/components/VideoPlayer.tsx (Final Production Version with UX Features)
+// src/components/VideoPlayer.tsx
+import React, {
+  useRef,
+  useState,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+  useMemo,
+  useEffect,
+} from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Play, Loader2 } from "lucide-react";
+import usePlayer from "./usePlayer";
+import Controls from "./Controls";
+import Hls from "hls.js";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import Hls, { type Level } from "hls.js";
-import {
-    Play, Pause, Volume2, VolumeX,
-    SkipBack, SkipForward, Maximize2, Minimize2, Settings, Loader2
-} from "lucide-react";
-
-const clamp = (n: number, min = 0, max = 1) => Math.min(max, Math.max(min, n));
-
-const fmtDuration = (sec?: number) => {
-    if (!sec && sec !== 0) return "-";
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    return h > 0
-        ? `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
-        : `${m}:${s.toString().padStart(2, "0")}`;
+export type Chapter = { time: number; title: string };
+export type VideoMeta = {
+  url: string;
+  title?: string;
+  poster?: string;
+  thumbnails_base?: string;
 };
 
-type VideoMeta = {
-    url: string;
-    title?: string;
-    thumbnails_base?: string;
+export type PlayerHandle = {
+  play: () => void;
+  pause: () => void;
+  seek: (seconds: number) => void;
+  getState: () => any;
 };
 
-type PlayerProps = {
-    video: VideoMeta;
-    onProgress?: (t: number, d: number) => void;
-    onFullscreenChange?: (fs: boolean) => void;
-    onEnded?: () => void;
+type Props = {
+  video: VideoMeta;
+  autoPlay?: boolean;
+  startTime?: number;
+  chapters?: Chapter[];
+  onEnded?: () => void;
+  className?: string;
 };
 
-export default function VideoPlayer({
-    video,
-    onProgress,
-    onFullscreenChange,
-    onEnded,
-}: PlayerProps) {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const hlsRef = useRef<Hls | null>(null);
-    const lastClickTime = useRef(0);
+// -----------------------------------------
+//            VIDEO PLAYER START
+// -----------------------------------------
 
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isBuffering, setIsBuffering] = useState(false); // NEW STATE: Buffering
-    const [volume, setVolume] = useState(0.8);
-    const [isMuted, setIsMuted] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(0);
-    const [buffered, setBuffered] = useState(0);
+const VideoPlayer = forwardRef<PlayerHandle, Props>(
+  ({ video, autoPlay = true, startTime = 0, chapters = [], onEnded, className = "" }, ref) => {
+    const { vRef, state, actions } = usePlayer({ video, autoPlay, startTime });
+
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
+    const [showCursor, setShowCursor] = useState(true);
+    const [dominantColor, setDominantColor] = useState("#0a0a0a");
 
-    const [hoverPct, setHoverPct] = useState<number | null>(null);
-    const [hoverTime, setHoverTime] = useState<number | null>(null);
+    const [ambientEnabled] = useState(true);
+    const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const [levels, setLevels] = useState<Level[]>([]);
-    const [currentLevel, setCurrentLevel] = useState<number | "auto">("auto");
-    const [settingsOpen, setSettingsOpen] = useState(false);
+    // NEW — ambient flash
+    const [pulseKey, setPulseKey] = useState(0);
 
-    const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // -----------------------------------------
+    // EXTRACT DOMINANT POSTER COLOR
+    // -----------------------------------------
 
-    // Auto-hide controls logic
-    const resetHideTimer = () => {
-        setShowControls(true);
-        if (hideTimeout.current) clearTimeout(hideTimeout.current);
-        hideTimeout.current = setTimeout(() => setShowControls(false), 3000);
-    };
-
-    const pauseHideTimer = () => {
-        if (hideTimeout.current) clearTimeout(hideTimeout.current);
-    };
-
-    // Actions (wrapped in useCallback for use in effects and keybindings)
-    const togglePlay = useCallback(async () => {
-        const el = videoRef.current;
-        if (!el) return;
-        if (el.paused) await el.play();
-        else el.pause();
-    }, []);
-
-    const seekBy = useCallback((d: number) => {
-        const el = videoRef.current;
-        if (!el) return;
-        el.currentTime = clamp(el.currentTime + d, 0, duration || 0);
-    }, [duration]);
-
-    const toggleMute = useCallback(() => {
-        const el = videoRef.current;
-        if (!el) return;
-        const m = !isMuted;
-        el.muted = m;
-        setIsMuted(m);
-    }, [isMuted]);
-
-    const toggleFullscreen = useCallback(async () => {
-        const wrapper = videoRef.current?.parentElement;
-        if (!wrapper) return;
-        if (!document.fullscreenElement) await wrapper.requestFullscreen();
-        else await document.exitFullscreen();
-        setIsFullscreen(Boolean(document.fullscreenElement));
-    }, []);
-
-    const changeQuality = (level: number | "auto") => {
-        if (!hlsRef.current) return;
-        if (level === "auto") {
-            hlsRef.current.currentLevel = -1; // auto
-        } else {
-            hlsRef.current.currentLevel = level;
-        }
-        setCurrentLevel(level);
-        setSettingsOpen(false);
-    };
-
-    // --- NEW FEATURE: Double-Click Seeking Handler ---
-    const handleVideoClick = useCallback((e: React.MouseEvent) => {
-        const el = videoRef.current;
-        if (!el) return;
-
-        // 1. Double-click logic
-        const now = Date.now();
-        if (now - lastClickTime.current < 300) { // Check for double-click within 300ms
-            e.preventDefault();
-            e.stopPropagation();
-
-            const rect = el.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            
-            // If click is on the left half of the player
-            if (clickX < rect.width / 2) {
-                seekBy(-10); // Seek back 10 seconds
-            } else {
-                seekBy(10); // Seek forward 10 seconds
-            }
-
-            // Reset the double-click check to prevent triple/quadruple clicks
-            lastClickTime.current = 0; 
-            return;
-        }
-
-        // 2. Single-click logic (Toggle Play/Pause)
-        lastClickTime.current = now;
-        togglePlay();
-
-    }, [seekBy, togglePlay]);
-    
-    // ---- Load video (Main Effect) ----
     useEffect(() => {
-        const el = videoRef.current;
-        if (!el || !video) return;
+      if (!video?.poster) return;
 
-        hlsRef.current?.destroy(); 
-        
-        if (!video.url.endsWith(".m3u8")) {
-            el.src = video.url;
-            el.play().catch(() => {});
-            return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = video.poster;
+
+      img.onload = () => {
+        try {
+          const cv = document.createElement("canvas");
+          const cx = cv.getContext("2d");
+          if (!cx) return;
+
+          cv.width = 32;
+          cv.height = 18;
+
+          cx.drawImage(img, 0, 0, 32, 18);
+
+          const data = cx.getImageData(0, 0, 32, 18).data;
+
+          let r = 0,
+            g = 0,
+            b = 0;
+
+          for (let i = 0; i < data.length; i += 12) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+          }
+
+          r = Math.round(r / (data.length / 12));
+          g = Math.round(g / (data.length / 12));
+          b = Math.round(b / (data.length / 12));
+
+          setDominantColor(`rgb(${r}, ${g}, ${b})`);
+        } catch {}
+      };
+    }, [video?.poster]);
+
+    // -----------------------------------------
+    // HLS INITIALIZATION
+    // -----------------------------------------
+
+    useEffect(() => {
+      const el = vRef.current;
+      if (!el || !video?.url) return;
+
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {}
+
+      let hls: Hls | null = null;
+
+      const safePlay = async () => {
+        try {
+          if (autoPlay) await el.play();
+        } catch {
+          try {
+            el.muted = true;
+            await el.play();
+            setTimeout(() => (el.muted = false), 300);
+          } catch {}
         }
+      };
 
-        // HLS logic remains...
+      if (video.url.endsWith(".m3u8")) {
         if (Hls.isSupported()) {
-            const hls = new Hls({ enableWorker: true });
-            hlsRef.current = hls;
-            hls.loadSource(video.url);
-            hls.attachMedia(el);
-
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                setLevels(hls.levels);
-                setCurrentLevel("auto");
-                el.play().catch(() => {});
-            });
-
-            return () => hls.destroy();
+          hls = new Hls();
+          hls.loadSource(video.url);
+          hls.attachMedia(el);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => safePlay());
         } else {
-            el.src = video.url;
-            el.play().catch(() => {});
+          el.src = video.url;
+          el.addEventListener("loadedmetadata", safePlay, { once: true });
         }
-    }, [video?.url]);
+      } else {
+        el.src = video.url;
+        safePlay();
+      }
 
-    // Sync volume
+      // NEW — trigger ambient pulse
+      const handlePlay = () => setPulseKey((k) => k + 1);
+      el.addEventListener("play", handlePlay);
+
+      return () => {
+        el.removeEventListener("play", handlePlay);
+        hls?.destroy();
+      };
+    }, [video.url, autoPlay, vRef]);
+
+    // -----------------------------------------
+    // HANDLE ENDED
+    // -----------------------------------------
+
     useEffect(() => {
-        if (videoRef.current) videoRef.current.volume = volume;
-    }, [volume]);
+      const el = vRef.current;
+      if (!el) return;
 
-    // Media events and Buffering Logic
+      const fn = () => onEnded?.();
+      el.addEventListener("ended", fn);
+      return () => el.removeEventListener("ended", fn);
+    }, [onEnded]);
+
+    // -----------------------------------------
+    // FULLSCREEN
+    // -----------------------------------------
+
+    const toggleFullscreen = useCallback(() => {
+      const wrapper = vRef.current?.parentElement;
+      if (!wrapper) return;
+
+      if (!document.fullscreenElement) {
+        wrapper.requestFullscreen?.();
+        setIsFullscreen(true);
+      } else {
+        document.exitFullscreen?.();
+        setIsFullscreen(false);
+      }
+    }, []);
+
+    // -----------------------------------------
+    // KEYBOARD SHORTCUTS
+    // -----------------------------------------
+
     useEffect(() => {
-        const el = videoRef.current;
-        if (!el) return;
+      const onKey = (e: KeyboardEvent) => {
+        if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName || "")) return;
 
-        const onLoaded = () => setDuration(el.duration || 0);
-        const onTime = () => {
-            setCurrentTime(el.currentTime);
-            setDuration(el.duration || 0);
-            try {
-                const endIdx = el.buffered?.length ? el.buffered.length - 1 : 0;
-                const b = el.buffered?.length ? el.buffered.end(endIdx) : 0;
-                setBuffered(b);
-            } catch {}
-            onProgress?.(el.currentTime, el.duration || 0);
-        };
-        const onPlay = () => { setIsPlaying(true); setIsBuffering(false); };
-        const onPause = () => setIsPlaying(false);
-        const onEnd = () => onEnded?.();
-        
-        // NEW BUFFFERING LOGIC
-        const onWaiting = () => setIsBuffering(true);
-        const onPlaying = () => setIsBuffering(false);
+        switch (e.key.toLowerCase()) {
+          case " ":
+          case "k":
+            e.preventDefault();
+            actions.playPause();
+            break;
+          case "j":
+            actions.seekBy(-10);
+            break;
+          case "l":
+            actions.seekBy(10);
+            break;
+          case "m":
+            actions.toggleMute();
+            break;
+          case "f":
+            toggleFullscreen();
+            break;
+        }
+      };
 
-        el.addEventListener("loadedmetadata", onLoaded);
-        el.addEventListener("timeupdate", onTime);
-        el.addEventListener("play", onPlay);
-        el.addEventListener("pause", onPause);
-        el.addEventListener("ended", onEnd);
-        el.addEventListener("waiting", onWaiting); // Added
-        el.addEventListener("playing", onPlaying); // Added
+      document.addEventListener("keydown", onKey);
+      return () => document.removeEventListener("keydown", onKey);
+    }, [actions, toggleFullscreen]);
 
-        return () => {
-            el.removeEventListener("loadedmetadata", onLoaded);
-            el.removeEventListener("timeupdate", onTime);
-            el.removeEventListener("play", onPlay);
-            el.removeEventListener("pause", onPause);
-            el.removeEventListener("ended", onEnd);
-            el.removeEventListener("waiting", onWaiting); // Cleanup
-            el.removeEventListener("playing", onPlaying); // Cleanup
-        };
-    }, [onProgress, onEnded]);
+    // -----------------------------------------
+    // AUTO-HIDE CONTROLS
+    // -----------------------------------------
 
-    // Fullscreen event listener
+    const resetHideTimer = useCallback(() => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+
+      setShowControls(true);
+      setShowCursor(true);
+
+      hideTimer.current = setTimeout(() => {
+        if (state.isPlaying) {
+          setShowControls(false);
+          setShowCursor(false);
+        }
+      }, 2400);
+    }, [state.isPlaying]);
+
     useEffect(() => {
-        const handleFs = () => {
-            const fs = !!document.fullscreenElement;
-            setIsFullscreen(fs);
-            onFullscreenChange?.(fs);
-        };
-        document.addEventListener("fullscreenchange", handleFs);
-        return () => document.removeEventListener("fullscreenchange", handleFs);
-    }, [onFullscreenChange]);
+      resetHideTimer();
+      return () => hideTimer.current && clearTimeout(hideTimer.current);
+    }, [resetHideTimer]);
 
-    // Keyboard Shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) {
-                return;
-            }
-
-            const el = videoRef.current;
-            if (!el) return;
-
-            switch (e.key) {
-                case ' ':
-                case 'k': 
-                    e.preventDefault(); 
-                    togglePlay();
-                    break;
-                case 'ArrowLeft': 
-                    e.preventDefault(); 
-                    seekBy(-5); // Seek 5 seconds
-                    break;
-                case 'ArrowRight':
-                    e.preventDefault(); 
-                    seekBy(5); // Seek 5 seconds
-                    break;
-                case 'm': 
-                    e.preventDefault();
-                    toggleMute();
-                    break;
-                case 'f': 
-                    e.preventDefault();
-                    toggleFullscreen();
-                    break;
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [togglePlay, seekBy, toggleMute, toggleFullscreen]);
-
-
-    // Derived state
-    const progressPct = duration ? (currentTime / duration) * 100 : 0;
-    const bufferedPct = duration ? (buffered / duration) * 100 : 0;
+    // -----------------------------------------
+    // RENDER
+    // -----------------------------------------
 
     return (
-        <div
-            className="relative bg-black h-full flex flex-col group"
-            onMouseMove={resetHideTimer}
-        >
-            <video
-                ref={videoRef}
-                className="w-full h-full"
-                playsInline
-                controls={false}
-                preload="metadata"
-                onClick={handleVideoClick} // Use the custom handler
-                key={video.url} 
+      <motion.div
+        key={video.url}
+        className={`relative w-full h-full overflow-hidden rounded-2xl shadow-xl ${className} ${
+          showCursor ? "cursor-default" : "cursor-none"
+        }`}
+        onMouseMove={resetHideTimer}
+        onMouseEnter={resetHideTimer}
+      >
+        {/* -----------------------------------------
+            AMBIENT FLASH (YouTube style)
+        ----------------------------------------- */}
+        {ambientEnabled && (
+          <motion.div
+            key={pulseKey}
+            initial={{ opacity: 0, scale: 1, filter: "brightness(1) saturate(1)" }}
+            animate={{
+              opacity: [0, 1, 0.8, 0.5],
+              scale: [1, 1.15, 1.08, 1],
+              filter: [
+                "brightness(1) saturate(1)",
+                "brightness(2.5) saturate(1.7)",
+                "brightness(1.8) saturate(1.3)",
+                "brightness(1.2) saturate(1.1)",
+              ],
+            }}
+            transition={{ duration: 0.9, ease: "easeOut" }}
+            className="absolute inset-[-30%] pointer-events-none"
+            style={{
+              background: `
+                radial-gradient(circle at 30% 40%, ${dominantColor} 20%, transparent 60%),
+                radial-gradient(circle at 70% 70%, ${dominantColor} 20%, transparent 60%)
+              `,
+              mixBlendMode: "screen",
+              filter: "blur(150px)",
+              zIndex: 0,
+            }}
+          />
+        )}
+
+        {/* -----------------------------------------
+            BREATHING AMBIENT BACKGROUND
+        ----------------------------------------- */}
+        {ambientEnabled && (
+          <motion.div
+            aria-hidden
+            initial={{ opacity: 0.35, scale: 1 }}
+            animate={{ opacity: [0.35, 0.55, 0.35], scale: [1, 1.02, 1] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute inset-[-25%] pointer-events-none"
+            style={{
+              background: `
+                radial-gradient(circle at 25% 40%, ${dominantColor} 12%, transparent 55%),
+                radial-gradient(circle at 75% 70%, ${dominantColor} 12%, transparent 55%)
+              `,
+              mixBlendMode: "screen",
+              filter: "blur(150px)",
+              zIndex: 0,
+            }}
+          />
+        )}
+
+        {/* -----------------------------------------
+            VIDEO ELEMENT
+        ----------------------------------------- */}
+        <video
+          ref={vRef}
+          className="relative z-10 w-full h-full object-cover bg-black"
+          poster={video.poster}
+          playsInline
+          preload="auto"
+          onClick={actions.playPause}
+        />
+
+        {/* -----------------------------------------
+            BUFFER FADE-IN
+        ----------------------------------------- */}
+        <AnimatePresence>
+          {state.isBuffering && (
+            <motion.div
+              className="absolute inset-0 bg-black z-20"
+              initial={{ opacity: 1 }}
+              animate={{ opacity: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1 }}
             />
+          )}
+        </AnimatePresence>
 
-            {/* Overlay Play Button */}
-            {!isPlaying && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <button
-                        className="w-20 h-20 bg-black/50 rounded-full grid place-items-center pointer-events-auto"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            togglePlay();
-                        }}
-                    >
-                        <Play className="w-10 h-10 text-white" />
-                    </button>
-                </div>
-            )}
-            
-            {/* NEW FEATURE: Buffering Spinner */}
-            {isBuffering && (
-                <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                    <Loader2 className="w-12 h-12 text-white animate-spin" />
-                </div>
-            )}
-
-            {/* Controls */}
-            <div
-                onMouseEnter={pauseHideTimer} 
-                onMouseLeave={resetHideTimer} 
-                className={`absolute bottom-0 left-0 right-0 px-4 py-2 bg-gradient-to-t from-black/80 to-transparent z-40 transition-opacity duration-500 ${
-                    showControls ? "opacity-100" : "opacity-0"
-                }`}
+        {/* -----------------------------------------
+            PAUSE OVERLAY
+        ----------------------------------------- */}
+        <AnimatePresence>
+          {!state.isPlaying && !state.isBuffering && (
+            <motion.div
+              className="absolute inset-0 z-30 bg-black/40 backdrop-blur-md flex flex-col items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
             >
-                {/* Progress Bar with Thumbnails */}
-                <div className="relative w-full group h-5 mb-2 flex items-center">
-                    <div
-                        className="absolute h-1.5 bg-white/30 rounded-full"
-                        style={{ width: `${bufferedPct}%` }}
-                    />
-                    <div
-                        className="absolute h-1.5 rounded-full bg-red-600"
-                        style={{ width: `${progressPct}%` }}
-                    />
-                    <input
-                        type="range"
-                        min={0}
-                        max={1000}
-                        value={duration ? Math.floor((currentTime / duration) * 1000) : 0}
-                        onChange={(e) => {
-                            const pct = Number(e.target.value) / 1000;
-                            if (videoRef.current) videoRef.current.currentTime = (duration || 0) * pct;
-                        }}
-                        onMouseMove={(e) => {
-                            const rect = (e.target as HTMLElement).getBoundingClientRect();
-                            const pct = clamp((e.clientX - rect.left) / rect.width);
-                            setHoverPct(pct);
-                            setHoverTime(pct * (duration || 0));
-                        }}
-                        onMouseLeave={() => {
-                            setHoverPct(null);
-                            setHoverTime(null);
-                        }}
-                        className="w-full appearance-none bg-transparent cursor-pointer relative"
-                    />
+              {video.title && (
+                <div className="text-white text-xl mb-4">{video.title}</div>
+              )}
+              <motion.button
+                whileHover={{ scale: 1.07 }}
+                className="w-20 h-20 rounded-full bg-gradient-to-tr from-pink-500 to-fuchsia-500 grid place-items-center shadow-2xl"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  actions.play();
+                }}
+              >
+                <Play className="w-10 h-10 text-white" />
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                    {/* Hover Thumbnail Preview */}
-                    {hoverPct !== null && hoverTime !== null && video?.thumbnails_base && (
-                        <div
-                            className="absolute -top-36 flex flex-col items-center pointer-events-none"
-                            style={{ left: `${hoverPct * 100}%`, transform: "translateX(-50%)" }}
-                        >
-                            <img
-                                src={`${video.thumbnails_base}/thumb_${String(
-                                    Math.floor(hoverTime / 5) + 1
-                                ).padStart(4, "0")}.jpg`}
-                                alt="preview"
-                                className="w-40 h-24 object-cover rounded-lg shadow-xl border border-white/30"
-                            />
-                            <span className="text-xs text-white bg-black/80 px-2 py-0.5 rounded mt-1">
-                                {fmtDuration(hoverTime)}
-                            </span>
-                        </div>
-                    )}
-                </div>
+        {/* -----------------------------------------
+            BUFFERING SPINNER
+        ----------------------------------------- */}
+        {state.isBuffering && (
+          <div className="absolute inset-0 grid place-items-center z-40 bg-black/30">
+            <Loader2 className="w-10 h-10 text-pink-500 animate-spin" />
+          </div>
+        )}
 
-                {/* Bottom Controls */}
-                <div className="flex items-center justify-between text-white relative">
-                    <div className="flex items-center gap-4">
-                        <button onClick={togglePlay}>{isPlaying ? <Pause /> : <Play />}</button>
-                        <button onClick={() => seekBy(-10)}><SkipBack /></button>
-                        <button onClick={() => seekBy(10)}><SkipForward /></button>
-
-                        {/* Volume */}
-                        <div className="flex items-center gap-2">
-                            <button onClick={toggleMute}>
-                                {isMuted || volume === 0 ? <VolumeX /> : <Volume2 />}
-                            </button>
-                            <input
-                                type="range"
-                                min={0}
-                                max={100}
-                                value={isMuted ? 0 : Math.round(volume * 100)}
-                                onChange={(e) => {
-                                    const val = Number(e.target.value) / 100;
-                                    setVolume(val);
-                                    setIsMuted(val === 0);
-                                }}
-                                className="w-24 h-1 bg-gray-500 rounded-lg cursor-pointer"
-                            />
-                        </div>
-
-                        <span className="text-sm font-mono">
-                            {fmtDuration(currentTime)} / {fmtDuration(duration)}
-                        </span>
-                    </div>
-
-                    {/* Right side controls */}
-                    <div className="flex items-center gap-3">
-                        {/* Settings (Quality) */}
-                        <div className="relative">
-                            <button onClick={() => setSettingsOpen((s) => !s)}>
-                                <Settings />
-                            </button>
-                            {settingsOpen && (
-                                <div className="absolute bottom-10 right-0 bg-black/90 border border-white/20 rounded-lg shadow-lg p-2 text-sm z-50">
-                                    <button
-                                        onClick={() => changeQuality("auto")}
-                                        className={`block w-full text-left px-3 py-1 rounded ${
-                                            currentLevel === "auto" ? "bg-red-600" : "hover:bg-white/10"
-                                        }`}
-                                    >
-                                        Auto
-                                    </button>
-                                    {levels.map((lvl, i) => (
-                                        <button
-                                            key={i}
-                                            onClick={() => changeQuality(i)}
-                                            className={`block w-full text-left px-3 py-1 rounded ${
-                                                currentLevel === i ? "bg-red-600" : "hover:bg-white/10"
-                                            }`}
-                                        >
-                                            {lvl.height}p
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <button onClick={toggleFullscreen}>
-                            {isFullscreen ? <Minimize2 /> : <Maximize2 />}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        {/* -----------------------------------------
+            CONTROLS
+        ----------------------------------------- */}
+        {showControls && (
+          <motion.div
+            className="absolute bottom-0 left-0 right-0 z-[50]"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.25 }}
+          >
+            <Controls
+              isPlaying={state.isPlaying}
+              isMuted={state.isMuted}
+              volume={state.volume}
+              duration={state.duration}
+              currentTime={state.currentTime}
+              buffered={state.buffered}
+              levels={state.levels}
+              currentLevel={state.currentLevel}
+              subtitles={state.subtitles}
+              currentSubtitle={state.currentSubtitle}
+              thumbnailsBase={video.thumbnails_base}
+              chapters={chapters}
+              onPlayPause={actions.playPause}
+              onSeekBy={actions.seekBy}
+              onSeekTo={actions.seekAbs}
+              onVolume={actions.setVolume}
+              onToggleMute={actions.toggleMute}
+              onChangeQuality={actions.changeQuality}
+              onChangeSubtitle={actions.setSubtitle}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
+            />
+          </motion.div>
+        )}
+      </motion.div>
     );
-}
+  }
+);
+
+export default VideoPlayer;

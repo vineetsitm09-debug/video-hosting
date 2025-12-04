@@ -1,14 +1,6 @@
-import { useState } from "react";
-import { Heart } from "lucide-react"; // removed unused MessageCircle
-
-// Explicit prop types
-interface VideoActionsProps {
-  videoId: string;
-  likes: Record<string, number>;
-  setLikes: React.Dispatch<React.SetStateAction<Record<string, number>>>;
-  comments: Record<string, string[]>;
-  setComments: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
-}
+// src/components/VideoActions.tsx
+import React, { useState } from "react";
+import { Heart, MessageCircle } from "lucide-react";
 
 export default function VideoActions({
   videoId,
@@ -16,11 +8,11 @@ export default function VideoActions({
   setLikes,
   comments,
   setComments,
-}: VideoActionsProps) {
+}: any) {
   const [commentText, setCommentText] = useState("");
 
   const handleLike = () => {
-    setLikes((prev) => ({
+    setLikes((prev: any) => ({
       ...prev,
       [videoId]: (prev[videoId] || 0) + 1,
     }));
@@ -28,7 +20,7 @@ export default function VideoActions({
 
   const handleComment = () => {
     if (!commentText.trim()) return;
-    setComments((prev) => ({
+    setComments((prev: any) => ({
       ...prev,
       [videoId]: [...(prev[videoId] || []), commentText],
     }));
@@ -64,7 +56,7 @@ export default function VideoActions({
           </button>
         </div>
         <ul className="space-y-2">
-          {(comments[videoId] || []).map((c, i: number) => (
+          {(comments[videoId] || []).map((c, i) => (
             <li
               key={i}
               className="px-3 py-2 rounded bg-white/5 border border-white/10"

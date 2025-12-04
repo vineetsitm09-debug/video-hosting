@@ -1,5 +1,5 @@
 // src/components/Toast.tsx
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 
 export default function Toast({
   message,

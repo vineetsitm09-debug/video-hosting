@@ -1,5 +1,4 @@
-// src/components/UploadButton.tsx
-import { useState } from "react";
+import React, { useState } from "react";
 import Toast from "./Toast";
 
 export default function UploadButton() {
