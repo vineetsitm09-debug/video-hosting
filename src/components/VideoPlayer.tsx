@@ -246,9 +246,10 @@ const VideoPlayer = forwardRef<PlayerHandle, Props>(
     return (
       <motion.div
         key={video.url}
-        className={`relative w-full h-full overflow-hidden rounded-2xl shadow-xl ${className} ${
-          showCursor ? "cursor-default" : "cursor-none"
-        }`}
+className={`relative w-full max-w-[1980px] aspect-video mx-auto overflow-hidden rounded-xl shadow-xl ${className} ${
+  showCursor ? "cursor-default" : "cursor-none"
+}`}
+
         onMouseMove={resetHideTimer}
         onMouseEnter={resetHideTimer}
       >
