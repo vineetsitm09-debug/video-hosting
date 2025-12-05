@@ -81,7 +81,7 @@ export default function Header({
       <header
         className={`sticky top-0 z-40 border-b border-white/10 backdrop-blur 
         ${
-          theme === "neon11"
+          theme === "neon"
             ? "bg-gradient-to-r from-indigo-900 to-purple-900"
             : "bg-black/80"
         }`}
@@ -243,4 +243,5 @@ export default function Header({
     </>
   );
 }
+
 
