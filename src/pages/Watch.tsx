@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import VideoPlayer from "../components/VideoPlayer";
-import UpNextPanel from "../components/UpNextPanel";
 
 type VideoItem = {
   id: string;
@@ -94,12 +93,6 @@ export default function Watch() {
       {/* RIGHT SIDE */}
       <div className="w-80 flex-shrink-0">
 
-        <UpNextPanel
-          nextVideo={next || null}
-          autoplayNext={true}
-          onCancel={() => {}}
-          onPlayNext={() => next && navigate(`/watch/${next.id}`)}
-        />
 
         {/* LIBRARY LIST */}
         <div className="rounded-2xl border shadow-lg bg-[#181818] p-3 h-[calc(100vh-180px)] overflow-y-auto">
